@@ -19,6 +19,7 @@ jobs:
 
       - name: Compile plugins
         run: |
+            mkdir -p plugins
             cd ./scripting
             pwd
             spcomp -i"./include/" mapdownloader.sp -o ../plugins/mapdownloader.smx

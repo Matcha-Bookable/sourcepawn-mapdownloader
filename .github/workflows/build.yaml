@@ -29,7 +29,12 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git commit -m "Compile sourcepawn" -a
+          git add plugins/
+          if ! git diff --cached --exit-code; then
+            git commit -m "Compile sourcepawn"
+          else
+            echo "No changes to commit"
+          fi
       - name: Push changes
         uses: ad-m/github-push-action@master
         with:

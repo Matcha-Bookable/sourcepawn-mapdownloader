@@ -58,6 +58,7 @@ public Action HandleChangeLevelAction(args) {
 		return Plugin_Continue;
 	} else {
 		PrintToChatAll("[Matcha] Map %s not found, trying to download", path);
+		PrintToServer("[Matcha] Map %s not found, trying to download", path);
 		DownloadMap(arg, path);
 		return Plugin_Handled;
 	}
@@ -81,6 +82,7 @@ public void OnMD5Complete(const bool success, const char[] md5Hash, any hDLPack)
 	
 	if (!success) {
 		PrintToChatAll("[Matcha] MD5 calculation failed, please try again or try another map.");
+		PrintToServer("[Matcha] MD5 calculation failed, please try again or try another map.");
 		DeleteFile(targetPath);
 		return;
 	}
@@ -115,6 +117,7 @@ public void DownloadMD5Checksum(char map[128], char targetPath[128], const char[
 	CURL_DEFAULT_OPT(curl);
 	
 	PrintToChatAll("[Matcha] Verifying MD5 checksum...");
+	PrintToServer("[Matcha] Verifying MD5 checksum...");
 	
 	Handle hDLPack = CreateDataPack();
 	WritePackCell(hDLPack, _:output_file);
@@ -145,9 +148,11 @@ public void OnMD5DownloadComplete(Handle hndl, CURLcode code, any hDLPack) {
 	
 	if (code != CURLE_OK) {
 		PrintToChatAll("[Matcha] Error downloading MD5 checksum");
+		PrintToServer("[Matcha] Error downloading MD5 checksum");
 		char sError[256];
 		curl_easy_strerror(code, sError, sizeof(sError));
 		PrintToChatAll("[Matcha] cURL error: %s", sError);
+		PrintToServer("[Matcha] cURL error: %s", sError);
 		DeleteFile(targetPath);
 		DeleteFile(md5FilePath);
 		return;
@@ -161,6 +166,7 @@ public void VerifyMD5Checksum(char map[128], char targetPath[128], const char[] 
 	Handle file = OpenFile(md5FilePath, "r");
 	if (file == INVALID_HANDLE) {
 		PrintToChatAll("[Matcha] Failed to open MD5 checksum file, please try again or try another map.");
+		PrintToServer("[Matcha] Failed to open MD5 checksum file, please try again or try another map.");
 		DeleteFile(targetPath);
 		DeleteFile(md5FilePath);
 		return;
@@ -169,6 +175,7 @@ public void VerifyMD5Checksum(char map[128], char targetPath[128], const char[] 
 	char expectedMD5[33];
 	if (!ReadFileString(file, expectedMD5, sizeof(expectedMD5))) {
 		PrintToChatAll("[Matcha] Failed to read MD5 checksum, please try again or try another map.");
+		PrintToServer("[Matcha] Failed to read MD5 checksum, please try again or try another map.");
 		CloseHandle(file);
 		DeleteFile(targetPath);
 		DeleteFile(md5FilePath);
@@ -189,12 +196,21 @@ public void VerifyMD5Checksum(char map[128], char targetPath[128], const char[] 
 	if (StrEqual(expectedMD5, calculatedMD5, true)) {
 		PrintToChatAll("[Matcha] MD5 verification successful");
 		PrintToChatAll("[Matcha] %s MD5: %s", map, calculatedMD5);
+
+		PrintToServer("[Matcha] MD5 verification successful");
+		PrintToServer("[Matcha] %s MD5: %s", map, calculatedMD5);
+
 		DeleteFile(md5FilePath); // delete the md5sum
 		changeLevel(map);
 	} else {
 		PrintToChatAll("[Matcha] MD5 verification failed, please try again or try another map");
 		PrintToChatAll("[Matcha] %s MD5: %s", map, calculatedMD5);
 		PrintToChatAll("[Matcha] Expected MD5: %s", expectedMD5);
+
+		PrintToServer("[Matcha] MD5 verification failed, please try again or try another map");
+		PrintToServer("[Matcha] %s MD5: %s", map, calculatedMD5);
+		PrintToServer("[Matcha] Expected MD5: %s", expectedMD5);
+
 		DeleteFile(targetPath); // Delete both files
 		DeleteFile(md5FilePath);
 	}
@@ -215,6 +231,8 @@ public DownloadMapUrl(char map[128], char fullUrl[512], char targetPath[128]) {
 	CURL_DEFAULT_OPT(curl);
 
 	PrintToChatAll("[Matcha] Trying to download %s from %s", map, fullUrl);
+	PrintToServer("[Matcha] Trying to download %s from %s", map, fullUrl);
+
 
 	Handle hDLPack = CreateDataPack();
 	WritePackCell(hDLPack, _:output_file);
@@ -239,15 +257,22 @@ public onComplete(Handle hndl, CURLcode code, any hDLPack) {
 
 	if (code != CURLE_OK) {
 		PrintToChatAll("[Matcha] Error downloading map %s", map);
+		PrintToServer("[Matcha] Error downloading map %s", map);
+
 		char sError[256];
 		curl_easy_strerror(code, sError, sizeof(sError));
 		PrintToChatAll("[Matcha] cURL error: %s", sError);
 		PrintToChatAll("[Matcha] cURL error code: %d", code);
+
+		PrintToServer("[Matcha] cURL error: %s", sError);
+		PrintToServer("[Matcha] cURL error code: %d", code);
+
 		DeleteFile(targetPath);
 	} else {
 		//PrintToChatAll("map size(%s): %d", targetPath, FileSize(targetPath));
 		if (FileSize(targetPath) < 1024) {
 			PrintToChatAll("[Matcha] Map file too small, discarding");
+			PrintToServer("[Matcha] Map file too small, discarding");
 			DeleteFile(targetPath);
 			return;
 		}

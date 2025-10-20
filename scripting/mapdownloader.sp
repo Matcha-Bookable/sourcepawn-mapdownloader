@@ -14,8 +14,8 @@ public Plugin myinfo =
 
 int CURL_Default_opt[][2] = {
 	{_:CURLOPT_NOSIGNAL,1},
-	{_:CURLOPT_NOPROGRESS,1},
-	{_:CURLOPT_TIMEOUT,300},
+	{_:CURLOPT_NOPROGRESS,0},
+	{_:CURLOPT_TIMEOUT,60},
 	{_:CURLOPT_CONNECTTIMEOUT,120},
 	{_:CURLOPT_USE_SSL,CURLUSESSL_TRY},
 	{_:CURLOPT_SSL_VERIFYPEER,0},
@@ -26,6 +26,9 @@ int CURL_Default_opt[][2] = {
 #define CURL_DEFAULT_OPT(%1) curl_easy_setopt_int_array(%1, CURL_Default_opt, sizeof(CURL_Default_opt))
 
 Handle g_hCvarUrl = INVALID_HANDLE;
+bool g_bDownloadInProgress = false;
+float g_fLastProgressUpdate = 0.0;
+int g_iLastProgressPercent = -1;
 
 public OnPluginStart() {
 	g_hCvarUrl = CreateConVar("sm_map_download_base", "https://fastdl.avanlcy.hk/maps", "map download url", FCVAR_PROTECTED);
@@ -34,6 +37,13 @@ public OnPluginStart() {
 }
 
 public Action HandleChangeLevelAction(args) {
+	// Check if a download is already in progress
+	if (g_bDownloadInProgress) {
+		PrintToChatAll("[Matcha] Cannot change level: Map download in progress, please wait...");
+		PrintToServer("[Matcha] Cannot change level: Map download in progress");
+		return Plugin_Handled;
+	}
+
 	char part[128];
 	char arg[128];
 	int argpos = 0;
@@ -59,6 +69,7 @@ public Action HandleChangeLevelAction(args) {
 	} else {
 		PrintToChatAll("[Matcha] Map %s not found, trying to download", path);
 		PrintToServer("[Matcha] Map %s not found, trying to download", path);
+		g_bDownloadInProgress = true;
 		DownloadMap(arg, path);
 		return Plugin_Handled;
 	}
@@ -84,6 +95,7 @@ public void OnMD5Complete(const bool success, const char[] md5Hash, any hDLPack)
 		PrintToChatAll("[Matcha] MD5 calculation failed, please try again or try another map.");
 		PrintToServer("[Matcha] MD5 calculation failed, please try again or try another map.");
 		DeleteFile(targetPath);
+		g_bDownloadInProgress = false;
 		return;
 	}
 	
@@ -155,6 +167,7 @@ public void OnMD5DownloadComplete(Handle hndl, CURLcode code, any hDLPack) {
 		PrintToServer("[Matcha] cURL error: %s", sError);
 		DeleteFile(targetPath);
 		DeleteFile(md5FilePath);
+		g_bDownloadInProgress = false; // Release lock on MD5 download failure
 		return;
 	}
 	
@@ -169,6 +182,7 @@ public void VerifyMD5Checksum(char map[128], char targetPath[128], const char[] 
 		PrintToServer("[Matcha] Failed to open MD5 checksum file, please try again or try another map.");
 		DeleteFile(targetPath);
 		DeleteFile(md5FilePath);
+		g_bDownloadInProgress = false; // Release lock on file open failure
 		return;
 	}
 	
@@ -179,6 +193,7 @@ public void VerifyMD5Checksum(char map[128], char targetPath[128], const char[] 
 		CloseHandle(file);
 		DeleteFile(targetPath);
 		DeleteFile(md5FilePath);
+		g_bDownloadInProgress = false;
 		return;
 	}
 	CloseHandle(file);
@@ -201,6 +216,7 @@ public void VerifyMD5Checksum(char map[128], char targetPath[128], const char[] 
 		PrintToServer("[Matcha] %s MD5: %s", map, calculatedMD5);
 
 		DeleteFile(md5FilePath); // delete the md5sum
+		g_bDownloadInProgress = false;
 		changeLevel(map);
 	} else {
 		PrintToChatAll("[Matcha] MD5 verification failed, please try again or try another map");
@@ -213,7 +229,25 @@ public void VerifyMD5Checksum(char map[128], char targetPath[128], const char[] 
 
 		DeleteFile(targetPath); // Delete both files
 		DeleteFile(md5FilePath);
+		g_bDownloadInProgress = false;
 	}
+}
+
+public int ProgressCallback(Handle hndl, int dltotal, int dlnow, int ultotal, int ulnow) {
+	float currentTime = GetGameTime();
+	if (dltotal > 0 && dlnow > 0) {
+		int percent = RoundToNearest((float(dlnow) / float(dltotal)) * 100.0);
+		
+		// Update if 2 seconds have passed AND percentage changed, or if it's a significant change (10%)
+		if ((currentTime - g_fLastProgressUpdate >= 2.0 && percent != g_iLastProgressPercent) || 
+		    (percent - g_iLastProgressPercent >= 10)) {
+			PrintToChatAll("[Matcha] Download progress: %d%% (%d KB / %d KB)", 
+				percent, dlnow / 1024, dltotal / 1024);
+			g_fLastProgressUpdate = currentTime;
+			g_iLastProgressPercent = percent;
+		}
+	}
+	return 0;
 }
 
 public DownloadMap(char map[128], char targetPath[128]) {
@@ -233,6 +267,9 @@ public DownloadMapUrl(char map[128], char fullUrl[512], char targetPath[128]) {
 	PrintToChatAll("[Matcha] Trying to download %s from %s", map, fullUrl);
 	PrintToServer("[Matcha] Trying to download %s from %s", map, fullUrl);
 
+	// Reset progress tracking
+	g_fLastProgressUpdate = 0.0;
+	g_iLastProgressPercent = -1;
 
 	Handle hDLPack = CreateDataPack();
 	WritePackCell(hDLPack, _:output_file);
@@ -241,6 +278,7 @@ public DownloadMapUrl(char map[128], char fullUrl[512], char targetPath[128]) {
 
 	curl_easy_setopt_handle(curl, CURLOPT_WRITEDATA, output_file);
 	curl_easy_setopt_string(curl, CURLOPT_URL, fullUrl);
+	curl_easy_setopt_function(curl, CURLOPT_PROGRESSFUNCTION, ProgressCallback);
 	curl_easy_perform_thread(curl, onComplete, hDLPack);
 }
 
@@ -268,12 +306,14 @@ public onComplete(Handle hndl, CURLcode code, any hDLPack) {
 		PrintToServer("[Matcha] cURL error code: %d", code);
 
 		DeleteFile(targetPath);
+		g_bDownloadInProgress = false;
 	} else {
 		//PrintToChatAll("map size(%s): %d", targetPath, FileSize(targetPath));
 		if (FileSize(targetPath) < 1024) {
 			PrintToChatAll("[Matcha] Map file too small, discarding");
 			PrintToServer("[Matcha] Map file too small, discarding");
 			DeleteFile(targetPath);
+			g_bDownloadInProgress = false;
 			return;
 		}
 		

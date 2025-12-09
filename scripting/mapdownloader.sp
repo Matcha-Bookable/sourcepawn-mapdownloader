@@ -14,13 +14,13 @@ public Plugin myinfo =
 
 int CURL_Default_opt[][2] = {
 	{_:CURLOPT_NOSIGNAL,1},
-	{_:CURLOPT_NOPROGRESS,0},
-	{_:CURLOPT_TIMEOUT,60},
+	{_:CURLOPT_NOPROGRESS,1},
+	{_:CURLOPT_TIMEOUT,300},
 	{_:CURLOPT_CONNECTTIMEOUT,120},
 	{_:CURLOPT_USE_SSL,CURLUSESSL_TRY},
 	{_:CURLOPT_SSL_VERIFYPEER,0},
 	{_:CURLOPT_SSL_VERIFYHOST,0},
-	{_:CURLOPT_VERBOSE,0}
+	{_:CURLOPT_VERBOSE,1}
 };
 
 #define CURL_DEFAULT_OPT(%1) curl_easy_setopt_int_array(%1, CURL_Default_opt, sizeof(CURL_Default_opt))
@@ -38,27 +38,21 @@ public OnPluginStart() {
 	RegServerCmd("changelevel", HandleChangeLevelAction);
 }
 
+public void OnMapEnd() {
+	CleanupDownload();
+}
+
+public void OnPluginEnd() {
+	CleanupDownload();
+}
+
 public Action HandleChangeLevelAction(args) {
 	// Check if a download is already in progress
 	if (g_bDownloadInProgress) {
 		PrintToChatAll("[Matcha] Cancelling current download and starting new map change...");
 		PrintToServer("[Matcha] Cancelling current download and starting new map change...");
 		
-		// Stop the progress timer
-		if (g_hProgressTimer != INVALID_HANDLE) {
-			KillTimer(g_hProgressTimer);
-			g_hProgressTimer = INVALID_HANDLE;
-		}
-		
-		// Clean up the incomplete download file
-		if (strlen(g_sDownloadingFilePath) > 0 && FileExists(g_sDownloadingFilePath)) {
-			DeleteFile(g_sDownloadingFilePath);
-			PrintToServer("[Matcha] Deleted incomplete download: %s", g_sDownloadingFilePath);
-		}
-		
-		// Reset download state
-		g_bDownloadInProgress = false;
-		g_sDownloadingFilePath[0] = '\0';
+		CleanupDownload();
 	}
 
 	char part[128];
@@ -358,6 +352,26 @@ public onComplete(Handle hndl, CURLcode code, any hDLPack) {
 	}
 
 	return;
+}
+
+public void CleanupDownload() {
+	// Stop the progress timer if running
+	if (g_hProgressTimer != INVALID_HANDLE) {
+		KillTimer(g_hProgressTimer);
+		g_hProgressTimer = INVALID_HANDLE;
+	}
+	
+	// Clean up any incomplete download files
+	if (g_bDownloadInProgress && strlen(g_sDownloadingFilePath) > 0 && FileExists(g_sDownloadingFilePath)) {
+		DeleteFile(g_sDownloadingFilePath);
+		PrintToServer("[Matcha] Cleaned up incomplete download: %s", g_sDownloadingFilePath);
+	}
+	
+	// Reset all download state
+	g_bDownloadInProgress = false;
+	g_sDownloadingFilePath[0] = '\0';
+	g_fLastProgressUpdate = 0.0;
+	g_iLastProgressPercent = -1;
 }
 
 public changeLevel(char map[128]) {

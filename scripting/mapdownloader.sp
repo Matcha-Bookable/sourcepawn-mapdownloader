@@ -2,13 +2,14 @@
 #include <sourcemod>
 #include <cURL>
 #include <tf2>
+#include <md5>
 
 public Plugin myinfo =
 {
 	name = "Map Downloader (Modified)",
 	author = "Icewind - Modified by avan",
 	description = "Automatically download missing maps (with md5sum checking)",
-	version = "0.2.2",
+	version = "0.2.3",
 	url = "https://discord.gg/8ysCuREbWQ"
 };
 
@@ -93,16 +94,15 @@ Hopps — 00:01
 	If that happens we should question if we live in a matrix
 	Lol
 */
-public void OnMD5Complete(const bool success, const char[] md5Hash, any hDLPack) {
-	char map[128];
-	char targetPath[128];
-	
-	ResetPack(Handle:hDLPack);
-	ReadPackString(Handle:hDLPack, map, sizeof(map));
-	ReadPackString(Handle:hDLPack, targetPath, sizeof(targetPath));
-	CloseHandle(Handle:hDLPack);
-	
-	if (!success) {
+public void ValidateBSPWithMD5(char map[128], char targetPath[128]) {
+	char md5sum[33];
+	if (MD5File(targetPath, md5sum, sizeof(md5sum)))
+	{
+		// Log the MD5 hash for verification and debugging
+		PrintToServer("[Matcha] Downloaded map %s MD5: %s", map, md5sum);
+	}
+	else
+	{
 		PrintToChatAll("[Matcha] MD5 calculation failed, please try again or try another map.");
 		PrintToServer("[Matcha] MD5 calculation failed, please try again or try another map.");
 		DeleteFile(targetPath);
@@ -110,20 +110,8 @@ public void OnMD5Complete(const bool success, const char[] md5Hash, any hDLPack)
 		return;
 	}
 	
-	// Log the MD5 hash for verification and debugging
-	PrintToServer("[Matcha] Downloaded map %s MD5: %s", map, md5Hash);
-	
 	// Now download the MD5 checksum file to verify integrity
-	DownloadMD5Checksum(map, targetPath, md5Hash);
-}
-
-public void ValidateBSPWithMD5(char map[128], char targetPath[128]) {
-	Handle hDLPack = CreateDataPack();
-	WritePackString(hDLPack, map);
-	WritePackString(hDLPack, targetPath);
-	
-	// calculate
-	curl_hash_file(targetPath, Openssl_Hash_MD5, OnMD5Complete, hDLPack);
+	DownloadMD5Checksum(map, targetPath, md5sum);
 }
 
 public void DownloadMD5Checksum(char map[128], char targetPath[128], const char[] calculatedMD5) {
